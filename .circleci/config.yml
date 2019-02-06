@@ -142,6 +142,12 @@ step-gclient-sync: &step-gclient-sync
   run:
     name: Gclient sync
     command: |
+      echo gclient config \
+        --name "src/electron" \
+        --unmanaged \
+        $GCLIENT_EXTRA_ARGS \
+        "$CIRCLE_REPOSITORY_URL"
+
       gclient config \
         --name "src/electron" \
         --unmanaged \
@@ -168,6 +174,13 @@ step-setup-env-for-build: &step-setup-env-for-build
         fi
       fi
 
+step-restore-brew-cache: &step-restore-brew-cache
+  restore_cache:
+    paths:
+      - /usr/local/Homebrew
+    keys:
+      - v1-brew-cache-{{ arch }}
+
 step-install-nodejs-on-mac: &step-install-nodejs-on-mac
   run:
     name: Install Node.js 10 on MacOS
@@ -176,6 +189,28 @@ step-install-nodejs-on-mac: &step-install-nodejs-on-mac
         brew update
         brew install node@10
         echo 'export PATH="/usr/local/opt/node@10/bin:$PATH"' >> $BASH_ENV
+      fi
+
+step-install-npm-deps-on-mac: &step-install-npm-deps-on-mac
+  run:
+    name: Install NPM Dependencies on MacOS
+    command: |
+      if [ "`uname`" == "Darwin" ]; then
+        cd src/electron
+        npm install
+      fi
+
+step-fix-clang-on-mac: &step-fix-clang-on-mac
+  run:
+    name: Fix Clang on macOS
+    command: |
+      if [ "`uname`" == "Darwin" ]; then
+        # Fix Clang Install
+        rm -rf src/third_party/llvm-build
+        python src/tools/clang/scripts/update.py
+        # Fix Framework Header Installs
+        rm -rf src/electron/external_binaries
+        python src/electron/script/update-external-binaries.py
       fi
 
 step-install-gnutar-on-mac: &step-install-gnutar-on-mac
@@ -458,14 +493,10 @@ step-maybe-generate-typescript-defs: &step-maybe-generate-typescript-defs
 # Lists of steps.
 steps-checkout: &steps-checkout
   steps:
-    - restore_cache:
-        paths:
-          - /usr/local/Homebrew
-        keys:
-          - v1-brew-cache-{{ arch }}
     - *step-checkout-electron
     - *step-depot-tools-get
     - *step-depot-tools-add-to-path
+    - *step-restore-brew-cache
     - *step-install-nodejs-on-mac
     - *step-install-gnutar-on-mac
 
@@ -528,7 +559,10 @@ steps-electron-build-for-tests: &steps-electron-build-for-tests
         at: .
     - *step-depot-tools-add-to-path
     - *step-setup-env-for-build
+    - *step-restore-brew-cache
     - *step-install-nodejs-on-mac
+    - *step-install-npm-deps-on-mac
+    - *step-fix-clang-on-mac
     - *step-gn-gen-default
 
     # Electron app
@@ -575,6 +609,7 @@ steps-electron-build-for-publish: &steps-electron-build-for-publish
     - *step-checkout-electron
     - *step-depot-tools-get
     - *step-depot-tools-add-to-path
+    - *step-restore-brew-cache
     - *step-install-nodejs-on-mac
     - *step-gclient-sync
     - *step-setup-env-for-build
@@ -707,6 +742,7 @@ steps-tests: &steps-tests
     - *step-electron-dist-unzip
     - *step-mksnapshot-unzip
     - *step-setup-linux-for-headless-testing
+    - *step-restore-brew-cache
     - *step-install-nodejs-on-mac
 
     - run:
@@ -764,9 +800,11 @@ jobs:
     <<: *steps-checkout
 
   mac-checkout:
-    <<: *machine-mac-large
+    <<: *machine-linux-2xlarge
     environment:
-      <<: *env-mac-large
+      <<: *env-linux-2xlarge
+      GCLIENT_EXTRA_ARGS: '--custom-var=checkout_mac=True --custom-var=host_os=mac'
+      ELECTRON_OVERRIDE_EXTERNAL_BINARY_PLATFORM: 'darwin'
     <<: *steps-checkout
 
   # Layer 2: Builds.

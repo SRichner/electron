@@ -10,7 +10,10 @@ from lib.util import add_exec_bit, download, extract_zip, rm_rf, \
                      safe_mkdir, tempdir
 
 SOURCE_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-
+FAKED_PLATFORM = PLATFORM
+env_override = os.environ.get('ELECTRON_OVERRIDE_EXTERNAL_BINARY_PLATFORM')
+if env_override is not None:
+  FAKED_PLATFORM = env_override
 
 def parse_args():
   parser = argparse.ArgumentParser(
@@ -74,7 +77,7 @@ def is_updated(version_file, version):
 
 
 def binary_should_be_downloaded(binary):
-  if 'platform' in binary and binary['platform'] != PLATFORM:
+  if 'platform' in binary and binary['platform'] != FAKED_PLATFORM:
     return False
 
   if 'targetArch' in binary and binary['targetArch'] != get_target_arch():
@@ -98,7 +101,7 @@ def download_to_temp_dir(url, filename):
 
 def add_exec_bit_to_sccache_binary(binary_dir):
   binary_name = 'sccache'
-  if PLATFORM == 'win32':
+  if FAKED_PLATFORM == 'win32':
     binary_name += '.exe'
 
   binary_path = os.path.join(binary_dir, binary_name)
